@@ -481,3 +481,176 @@ def fill_rate_trend(
             }
         )
     return result
+
+
+# ---------------------------------------------------------------------------
+# 8. GET /dashboard/attention
+# ---------------------------------------------------------------------------
+
+@router.get("/attention")
+def attention_items(
+    current_user: User = Depends(require_role(UserRole.MANAGER, UserRole.ADMIN)),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    """Actionable items for the next 48 hours, scoped to the caller's locations.
+
+    Three item types are returned (mixed list, ordered: understaffed first,
+    then stale offers, then absent employees):
+
+    * ``open_or_understaffed`` — shifts in the next 48 h that are ``open``,
+      ``unfilled``, or have ``accepted_count < min_staff``.
+    * ``offer_pending_long`` — OFFERED assignments whose ``offered_at`` is
+      more than 24 h ago.
+    * ``rostered_not_clocked_in`` — employees whose accepted shift is
+      currently in progress but who have no open (clock_out IS NULL) time
+      entry at that shift's location.
+
+    Each item carries a ``type``, a short human-readable ``label``, and the
+    IDs needed to navigate to the relevant screen.
+    """
+    now = datetime.now(timezone.utc)
+    today = now.date()
+    now_time = now.timetz()
+    cutoff_48h = (now + timedelta(hours=48)).date()
+    stale_offer_cutoff = now - timedelta(hours=24)
+
+    location_filter = _location_filter(db, current_user)
+
+    items: list[dict] = []
+
+    # ------------------------------------------------------------------
+    # 1. Open or understaffed shifts (next 48 h)
+    # ------------------------------------------------------------------
+    # accepted_count per shift — scalar subquery so we avoid a full GROUP BY
+    # on the outer query.
+    accepted_subq = (
+        select(func.count(ShiftAssignment.id))
+        .where(
+            ShiftAssignment.shift_id == Shift.id,
+            ShiftAssignment.status == AssignmentStatus.ACCEPTED,
+        )
+        .correlate(Shift)
+        .scalar_subquery()
+    )
+
+    understaffed_stmt = (
+        select(Shift, accepted_subq.label("accepted_count"))
+        .where(
+            Shift.date >= today,
+            Shift.date <= cutoff_48h,
+            Shift.status != ShiftStatus.CANCELLED,
+            # open/unfilled are always understaffed by definition; for
+            # confirmed/pending_acceptance we surface them if accepted < min.
+            (
+                Shift.status.in_([ShiftStatus.OPEN, ShiftStatus.UNFILLED])
+                | (accepted_subq < Shift.min_staff)
+            ),
+        )
+        .order_by(Shift.date, Shift.start_time)
+    )
+    if location_filter is not None:
+        understaffed_stmt = understaffed_stmt.where(
+            Shift.location_id.in_(location_filter)
+        )
+
+    for row in db.execute(understaffed_stmt).all():
+        shift = row[0]
+        accepted = row[1] or 0
+        needs = shift.min_staff - accepted
+        items.append(
+            {
+                "type": "open_or_understaffed",
+                "label": (
+                    f"Shift on {shift.date} needs {needs} more staff "
+                    f"({accepted}/{shift.min_staff} filled)"
+                ),
+                "shift_id": str(shift.id),
+                "location_id": str(shift.location_id),
+                "date": shift.date.isoformat(),
+                "start_time": shift.start_time.strftime("%H:%M:%S"),
+                "end_time": shift.end_time.strftime("%H:%M:%S"),
+                "accepted_count": accepted,
+                "min_staff": shift.min_staff,
+            }
+        )
+
+    # ------------------------------------------------------------------
+    # 2. Offers pending for more than 24 h
+    # ------------------------------------------------------------------
+    stale_stmt = (
+        select(ShiftAssignment)
+        .join(Shift, Shift.id == ShiftAssignment.shift_id)
+        .where(
+            ShiftAssignment.status == AssignmentStatus.OFFERED,
+            ShiftAssignment.offered_at < stale_offer_cutoff,
+        )
+        .order_by(ShiftAssignment.offered_at)
+    )
+    if location_filter is not None:
+        stale_stmt = stale_stmt.where(Shift.location_id.in_(location_filter))
+
+    for assignment in db.scalars(stale_stmt).all():
+        hours_pending = (now - assignment.offered_at).total_seconds() / 3600
+        items.append(
+            {
+                "type": "offer_pending_long",
+                "label": (
+                    f"Offer pending for {hours_pending:.0f} h "
+                    f"— employee has not responded"
+                ),
+                "assignment_id": str(assignment.id),
+                "shift_id": str(assignment.shift_id),
+                "employee_id": str(assignment.employee_id),
+                "offered_at": assignment.offered_at.isoformat(),
+                "hours_pending": round(hours_pending, 1),
+            }
+        )
+
+    # ------------------------------------------------------------------
+    # 3. Rostered now but not clocked in
+    # ------------------------------------------------------------------
+    # Employees with an ACCEPTED shift that is currently in progress.
+    rostered_now_stmt = (
+        select(ShiftAssignment, Shift)
+        .join(Shift, Shift.id == ShiftAssignment.shift_id)
+        .where(
+            Shift.date == today,
+            Shift.start_time <= now_time,
+            Shift.end_time >= now_time,
+            ShiftAssignment.status == AssignmentStatus.ACCEPTED,
+        )
+        .order_by(ShiftAssignment.employee_id)
+    )
+    if location_filter is not None:
+        rostered_now_stmt = rostered_now_stmt.where(
+            Shift.location_id.in_(location_filter)
+        )
+
+    rostered_rows = db.execute(rostered_now_stmt).all()
+
+    if rostered_rows:
+        # Build set of employee_ids that currently have an open time entry
+        # at the relevant locations.
+        rostered_location_ids = {row[1].location_id for row in rostered_rows}
+        clocked_in_stmt = select(TimeEntry.employee_id).where(
+            TimeEntry.clock_out.is_(None),
+            TimeEntry.location_id.in_(rostered_location_ids),
+        )
+        clocked_in_ids = set(db.scalars(clocked_in_stmt).all())
+
+        for assignment, shift in rostered_rows:
+            if assignment.employee_id not in clocked_in_ids:
+                items.append(
+                    {
+                        "type": "rostered_not_clocked_in",
+                        "label": "Employee rostered now but has not clocked in",
+                        "shift_id": str(shift.id),
+                        "location_id": str(shift.location_id),
+                        "employee_id": str(assignment.employee_id),
+                        "shift_start_time": shift.start_time.strftime("%H:%M:%S"),
+                        "shift_end_time": shift.end_time.strftime("%H:%M:%S"),
+                    }
+                )
+
+    return items
+

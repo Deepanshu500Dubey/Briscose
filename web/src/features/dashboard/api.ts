@@ -153,3 +153,56 @@ export function useFillRateTrend(weeks = 8) {
       api.get<FillRateTrendRow[]>('/dashboard/fill-rate-trend', { weeks }),
   });
 }
+
+// ---------------------------------------------------------------------------
+// GET /dashboard/attention
+// ---------------------------------------------------------------------------
+
+/** A shift that is open or has fewer accepted employees than min_staff. */
+export interface AttentionItemUnderstaffed {
+  type: 'open_or_understaffed';
+  label: string;
+  shift_id: string;
+  location_id: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+  accepted_count: number;
+  min_staff: number;
+}
+
+/** An offer that has been sitting unresponded for more than 24 h. */
+export interface AttentionItemStaleoffer {
+  type: 'offer_pending_long';
+  label: string;
+  assignment_id: string;
+  shift_id: string;
+  employee_id: string;
+  offered_at: string;
+  hours_pending: number;
+}
+
+/** An employee who is rostered right now but has not clocked in. */
+export interface AttentionItemAbsent {
+  type: 'rostered_not_clocked_in';
+  label: string;
+  shift_id: string;
+  location_id: string;
+  employee_id: string;
+  shift_start_time: string;
+  shift_end_time: string;
+}
+
+export type AttentionItem =
+  | AttentionItemUnderstaffed
+  | AttentionItemStaleoffer
+  | AttentionItemAbsent;
+
+export function useAttention() {
+  return useQuery({
+    queryKey: ['dashboard', 'attention'],
+    queryFn: () => api.get<AttentionItem[]>('/dashboard/attention'),
+    // Poll every 60 s — same cadence as the KPI tiles.
+    refetchInterval: 60_000,
+  });
+}

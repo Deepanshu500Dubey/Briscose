@@ -13,16 +13,19 @@ import {
 
 import { Card } from '@/components/Card';
 import { ErrorState, Skeleton, StaleDataBanner } from '@/components/States';
+import { Link } from 'react-router-dom';
+
 import {
+  useAttention,
   useHoursByEmployee,
   useOfferOutcomes,
-  useOvertime,
   useFillRateTrend,
-  useShiftsByWeekday,
   useStaffingByLocation,
   useTodaySummary,
 } from '@/features/dashboard/api';
+import { useLocations } from '@/features/locations/api';
 import type {
+  AttentionItem,
   AssignmentStatusKey,
   ShiftStatusKey,
   TodaySummary,
@@ -183,6 +186,8 @@ function StaffingByLocationChart() {
 // 2. Hours worked vs rostered by employee (grouped bars)
 // ---------------------------------------------------------------------------
 
+const OVERTIME_THRESHOLD = 40;
+
 function HoursByEmployeeChart() {
   const { data, isLoading, isError, refetch } = useHoursByEmployee();
 
@@ -194,7 +199,7 @@ function HoursByEmployeeChart() {
 
   // Use the local part of the email (before @) to keep X-axis labels readable.
   const chartData = data.map((row) => ({
-    name: row.email.split('@')[0],
+    name:     row.email.split('@')[0],
     Worked:   row.worked_hours,
     Rostered: row.rostered_hours,
   }));
@@ -212,7 +217,15 @@ function HoursByEmployeeChart() {
           <Tooltip cursor={{ fill: C.paper }} contentStyle={TOOLTIP_STYLE}
             formatter={(v) => [`${Number(v)} h`, '']} />
           <Legend iconType="square" iconSize={10} wrapperStyle={LEGEND_STYLE} />
-          <Bar dataKey="Worked"   fill={C.navy}   radius={[3, 3, 0, 0]} maxBarSize={28} />
+          {/* Dashed overtime threshold — matches the removed OvertimeChart */}
+          <ReferenceLine y={OVERTIME_THRESHOLD} stroke={C.badFg} strokeDasharray="4 3"
+            label={{ value: `${OVERTIME_THRESHOLD} h`, position: 'insideTopRight',
+              fontSize: 10, fill: C.badFg, fontFamily: 'Public Sans, sans-serif' }} />
+          <Bar dataKey="Worked" radius={[3, 3, 0, 0]} maxBarSize={28}>
+            {chartData.map((entry, i) => (
+              <Cell key={i} fill={entry.Worked > OVERTIME_THRESHOLD ? C.badFg : C.navy} />
+            ))}
+          </Bar>
           <Bar dataKey="Rostered" fill={C.inkFaint} radius={[3, 3, 0, 0]} maxBarSize={28} />
         </BarChart>
       </ResponsiveContainer>
@@ -221,42 +234,7 @@ function HoursByEmployeeChart() {
 }
 
 // ---------------------------------------------------------------------------
-// 3. Shifts by weekday (single series — past 30 days)
-// ---------------------------------------------------------------------------
-
-function ShiftsByWeekdayChart() {
-  const { data, isLoading, isError, refetch } = useShiftsByWeekday(30);
-
-  if (isLoading) return <ChartSkeleton />;
-  if (isError && !data)
-    return <ErrorState message="Couldn't load weekday breakdown." onRetry={() => refetch()} />;
-  // Backend always returns all 7 rows even with zero counts, so no empty guard needed.
-  if (!data) return <ChartSkeleton />;
-
-  const chartData = data.map((row) => ({
-    name:  row.day_name.slice(0, 3), // Mon, Tue …
-    count: row.count,
-  }));
-
-  return (
-    <>
-      {isError && <StaleDataBanner onRetry={() => refetch()} />}
-      <ResponsiveContainer width="100%" height={260}>
-        <BarChart data={chartData} margin={{ top: 4, right: 8, left: -8, bottom: 0 }}
-          barCategoryGap="32%">
-          <CartesianGrid vertical={false} stroke={C.lineSoft} />
-          <XAxis dataKey="name" tick={TICK_X} axisLine={false} tickLine={false} />
-          <YAxis allowDecimals={false} tick={TICK_Y} axisLine={false} tickLine={false} width={24} />
-          <Tooltip cursor={{ fill: C.paper }} contentStyle={TOOLTIP_STYLE} />
-          <Bar dataKey="count" name="Shifts" fill={C.navy} radius={[3, 3, 0, 0]} maxBarSize={40} />
-        </BarChart>
-      </ResponsiveContainer>
-    </>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// 4. Offer outcomes by week (stacked bars — last 8 weeks)
+// 3. Offer outcomes by week (stacked bars — last 8 weeks)
 // ---------------------------------------------------------------------------
 
 function OfferOutcomesChart() {
@@ -299,56 +277,7 @@ function OfferOutcomesChart() {
 }
 
 // ---------------------------------------------------------------------------
-// 5. Overtime by employee — sorted single series, over-threshold cells red
-// ---------------------------------------------------------------------------
-
-function OvertimeChart() {
-  const { data, isLoading, isError, refetch } = useOvertime();
-
-  if (isLoading) return <ChartSkeleton />;
-  if (isError && !data)
-    return <ErrorState message="Couldn't load overtime data." onRetry={() => refetch()} />;
-  if (!data || data.length === 0)
-    return <ChartEmpty message="No closed time entries this week." />;
-
-  const threshold = data[0]?.overtime_threshold ?? 40;
-
-  // Backend already returns rows sorted desc by total_hours.
-  const chartData = data.map((row) => ({
-    name:  row.email.split('@')[0],
-    hours: row.total_hours,
-    over:  row.over_weekly_limit,
-  }));
-
-  return (
-    <>
-      {isError && <StaleDataBanner onRetry={() => refetch()} />}
-      <ResponsiveContainer width="100%" height={260}>
-        <BarChart data={chartData} margin={{ top: 4, right: 8, left: -8, bottom: 0 }}
-          barCategoryGap="32%">
-          <CartesianGrid vertical={false} stroke={C.lineSoft} />
-          <XAxis dataKey="name" tick={TICK_X} axisLine={false} tickLine={false} />
-          <YAxis allowDecimals={false} tick={TICK_Y} axisLine={false} tickLine={false}
-            width={28} unit="h" />
-          <Tooltip cursor={{ fill: C.paper }} contentStyle={TOOLTIP_STYLE}
-            formatter={(v) => [`${Number(v)} h`, 'Worked']} />
-          {/* Dashed reference line at the overtime threshold */}
-          <ReferenceLine y={threshold} stroke={C.badFg} strokeDasharray="4 3"
-            label={{ value: `${threshold} h`, position: 'insideTopRight',
-              fontSize: 10, fill: C.badFg, fontFamily: 'Public Sans, sans-serif' }} />
-          <Bar dataKey="hours" name="Worked hours" radius={[3, 3, 0, 0]} maxBarSize={36}>
-            {chartData.map((entry, i) => (
-              <Cell key={i} fill={entry.over ? C.badFg : C.navy} />
-            ))}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
-    </>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// 6. Fill-rate trend — % confirmed per ISO week
+// 5. Fill-rate trend — % confirmed per ISO week
 // ---------------------------------------------------------------------------
 
 function FillRateTrendChart() {
@@ -419,6 +348,23 @@ function StatTile({ label, value, valueClassName = '', sub }: StatTileProps) {
   );
 }
 
+// "3 / 4" tile — clocked in vs rostered, warning when under-staffed.
+function OnShiftTile({ clockedIn, rostered }: { clockedIn: number; rostered: number }) {
+  const valueClass =
+    clockedIn < rostered ? 'text-status-warn-fg' : 'text-status-ok-fg';
+  return (
+    <Card className="flex flex-col gap-1 min-w-0">
+      <p className="text-xs font-semibold uppercase tracking-wide text-ink-soft">On shift</p>
+      <p className={`font-display text-4xl font-extrabold leading-none ${valueClass}`}>
+        {clockedIn}{' '}
+        <span className="text-2xl font-bold text-ink-faint">/</span>{' '}
+        {rostered}
+      </p>
+      <p className="text-xs text-ink-faint">Clocked in / rostered</p>
+    </Card>
+  );
+}
+
 function SkeletonTile() {
   return (
     <Card className="flex flex-col gap-2 min-w-0">
@@ -439,13 +385,8 @@ interface TileSpec {
   colour: (n: number) => string;
 }
 
+// shifts_today removed; clocked_in_now + rostered_now merged into OnShiftTile.
 const TILES: TileSpec[] = [
-  {
-    key: 'shifts_today',
-    label: 'Shifts today',
-    sub: 'All statuses',
-    colour: () => 'text-ink',
-  },
   {
     key: 'open_shifts_today',
     label: 'Open shifts',
@@ -458,19 +399,98 @@ const TILES: TileSpec[] = [
     sub: 'Awaiting employee response',
     colour: (n) => (n > 0 ? 'text-status-warn-fg' : 'text-ink'),
   },
-  {
-    key: 'clocked_in_now',
-    label: 'Clocked in now',
-    sub: 'Active time entries',
-    colour: (n) => (n > 0 ? 'text-status-ok-fg' : 'text-ink'),
-  },
-  {
-    key: 'rostered_now',
-    label: 'Rostered now',
-    sub: 'Accepted & on shift',
-    colour: (n) => (n > 0 ? 'text-brand-navy' : 'text-ink'),
-  },
 ];
+
+// ---------------------------------------------------------------------------
+// Needs-attention card
+// ---------------------------------------------------------------------------
+
+const ATTENTION_META: Record<
+  AttentionItem['type'],
+  { linkTo: string; linkLabel: string; dot: string }
+> = {
+  open_or_understaffed:    { linkTo: '/manage/staffing',   linkLabel: 'View board',     dot: C.badFg  },
+  offer_pending_long:      { linkTo: '/manage/staffing',   linkLabel: 'View board',     dot: C.warnFg },
+  rostered_not_clocked_in: { linkTo: '/manage/timesheets', linkLabel: 'View timesheets', dot: C.warnFg },
+};
+
+function AttentionCard() {
+  const { data, isLoading, isError, refetch } = useAttention();
+
+  if (isLoading) {
+    return (
+      <Card>
+        <div className="mb-3 flex items-center justify-between">
+          <Skeleton className="h-4 w-36" />
+          <Skeleton className="h-3 w-20" />
+        </div>
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="flex items-center gap-3 py-2.5 border-b border-line-soft last:border-none">
+            <Skeleton className="h-2 w-2 shrink-0 rounded-full" />
+            <Skeleton className="h-3 flex-1" />
+            <Skeleton className="h-3 w-16" />
+          </div>
+        ))}
+      </Card>
+    );
+  }
+
+  if (isError && !data) {
+    return (
+      <Card>
+        <ErrorState message="Couldn't load attention items." onRetry={() => refetch()} />
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="font-display text-lg font-bold">Needs attention</h2>
+        {data && data.length > 0 && (
+          <span className="rounded-full border border-status-bad-line bg-status-bad-bg px-2.5 py-0.5 font-display text-xs font-semibold uppercase tracking-wide text-status-bad-fg">
+            {data.length} item{data.length !== 1 ? 's' : ''}
+          </span>
+        )}
+      </div>
+
+      {!data || data.length === 0 ? (
+        /* All-clear state */
+        <div className="flex items-center gap-2.5 rounded-lg bg-status-ok-bg px-4 py-3">
+          <span
+            className="h-2 w-2 shrink-0 rounded-full"
+            style={{ background: C.okFg }}
+          />
+          <p className="text-sm font-semibold text-status-ok-fg">All clear — nothing needs attention right now</p>
+        </div>
+      ) : (
+        <ul className="divide-y divide-line-soft">
+          {data.map((item, i) => {
+            const { linkTo, linkLabel, dot } = ATTENTION_META[item.type];
+            return (
+              <li key={i} className="flex items-center gap-3 py-2.5">
+                {/* Status dot */}
+                <span
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{ background: dot }}
+                />
+                {/* Label */}
+                <p className="flex-1 text-sm text-ink">{item.label}</p>
+                {/* Link */}
+                <Link
+                  to={linkTo}
+                  className="shrink-0 text-xs font-semibold text-brand-navy underline-offset-2 hover:underline"
+                >
+                  {linkLabel}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Page
@@ -478,6 +498,8 @@ const TILES: TileSpec[] = [
 
 export function ManagerDashboardPage() {
   const { data, isLoading, isError, refetch } = useTodaySummary();
+  const { data: locations } = useLocations();
+  const multiLocation = (locations?.length ?? 0) > 1;
 
   return (
     <div className="flex flex-col gap-6">
@@ -488,14 +510,18 @@ export function ManagerDashboardPage() {
         </p>
       </div>
 
+      <AttentionCard />
+
       {/* KPI strip */}
       {isError && !data ? (
         <ErrorState message="Couldn't load today's summary." onRetry={() => refetch()} />
       ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-          {isLoading
-            ? Array.from({ length: TILES.length }, (_, i) => <SkeletonTile key={i} />)
-            : TILES.map((spec) => (
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-3">
+          {isLoading ? (
+            Array.from({ length: 3 }, (_, i) => <SkeletonTile key={i} />)
+          ) : (
+            <>
+              {TILES.map((spec) => (
                 <StatTile
                   key={spec.key}
                   label={spec.label}
@@ -504,35 +530,33 @@ export function ManagerDashboardPage() {
                   sub={spec.sub}
                 />
               ))}
+              <OnShiftTile
+                clockedIn={data!.clocked_in_now}
+                rostered={data!.rostered_now}
+              />
+            </>
+          )}
         </div>
       )}
 
       {/* Chart grid — 2 columns on large screens, 1 on mobile */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
 
-        <Card>
-          <ChartHeader title="Shifts by location" sub="Next 7 days · grouped by status" />
-          <StaffingByLocationChart />
-        </Card>
+        {multiLocation && (
+          <Card>
+            <ChartHeader title="Shifts by location" sub="Next 7 days · grouped by status" />
+            <StaffingByLocationChart />
+          </Card>
+        )}
 
-        <Card>
+        <Card className={multiLocation ? '' : 'lg:col-span-2'}>
           <ChartHeader title="Hours: worked vs rostered" sub="Current week · per employee" />
           <HoursByEmployeeChart />
         </Card>
 
-        <Card>
-          <ChartHeader title="Shifts by weekday" sub="Past 30 days · shift volume pattern" />
-          <ShiftsByWeekdayChart />
-        </Card>
-
-        <Card>
+        <Card className="lg:col-span-2">
           <ChartHeader title="Offer outcomes" sub="Last 8 weeks · stacked by status" />
           <OfferOutcomesChart />
-        </Card>
-
-        <Card>
-          <ChartHeader title="Weekly overtime" sub="Current week · hours worked, threshold 40 h" />
-          <OvertimeChart />
         </Card>
 
         <Card>
