@@ -1,0 +1,21 @@
+# nginx:alpine runs envsubst over templates/*.template into conf.d/*.conf at
+# startup, substituting ${PORT} from the environment — this is what lets one
+# image listen on whatever port Cloud Run assigns (it doesn't fix $PORT at
+# build time), no wrapper script needed.
+server {
+    listen ${PORT};
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Client-side routing (React Router) — any path that isn't a real file
+    # falls through to index.html rather than 404ing.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location = /health {
+        return 200 "ok";
+        add_header Content-Type text/plain;
+    }
+}

@@ -1,0 +1,27 @@
+Pages: 35
+
+=== PAGE 6 ===
+Open item: Storybook design-system scaffold (frontend-side, not started) and the
+self-registration-vs-provisioned-accounts question flagged last message, still unresolved.
+Step 2 Availability
+First full vertical slice, end to end:
+- Rolling 14-day availability window (backend computation + frontend grid UI), including "roll forward daily."
+- Bulk upsert endpoint (PATCH /availability) one call saves the whole grid, unsaved-state UI, save/error
+states.
+- Employee login dashboard shell (EMP-01) with no shifts yet, just somewhere to land.
+Step 3 Assignment core (highest-risk logic in the app)
+- Sh
+
+=== PAGE 35 ===
+Briscoes Wellington
+- Manager: manager.taylor@briscoes.demo
+- Employees: employee.noah@briscoes.demo, employee.grace@briscoes.demo,
+employee.liam@briscoes.demo, employee.zoe@briscoes.demo
+Briscoes Christchurch
+- Manager: manager.morgan@briscoes.demo
+- Employees: employee.ruby@briscoes.demo, employee.finn@briscoes.demo,
+employee.ivy@briscoes.demo
+One thing worth knowing: the app itself has no "display name" field on user accounts the email is the only
+identifier anywhere in the UI (e.g. the roster shows employee.alex@briscoes.demo, not "Alex"). The
+first-name-style emails are just there to make
+

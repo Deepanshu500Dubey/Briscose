@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "include": ["src"],
+  // Component tests use jest-dom matchers (toBeInTheDocument, etc.) that
+  // only resolve under vitest's own type environment (see
+  // tsconfig.vitest.json) — kept out of the production app build the same
+  // way tsconfig.e2e.json is kept separate for Playwright specs.
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
+}

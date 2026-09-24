@@ -1,0 +1,56 @@
+Pages: 35
+
+=== PAGE 1 ===
+Briscoes Crew
+Claude Code session transcript · 2026-08-27 to 2026-09-01 · 22 user turns
+USER
+look at rthe code base and test if it is running well or not
+CLAUDE
+While Docker Desktop starts up, let me review the actual application code for correctness.
+Code review looks clean — no obvious bugs. Now let's actually run it. Checking on Docker Desktop startup.
+Docker Desktop is starting up (processes are running, backend engine still initializing). Let me use the Monitor
+tool to wait properly instead
+
+=== PAGE 6 ===
+**■ Step 1 — Foundations** *(done this session)*
+Docker Compose stack, Postgres + btree_gist, Alembic baseline, JWT + refresh-token auth, role
+dependency chain, location-scoping dependency.
+Open item: Storybook design-system scaffold (frontend-side, not started) — and the
+self-registration-vs-provisioned-accounts question flagged last message, still unresolved.
+**■ Step 2 — Availability**
+First full vertical slice, end to end:
+- Rolling 14-day availability window (backend computation + frontend 
+
+=== PAGE 16 ===
+Built the full Phase 1 frontend against the real, running backend — every one of the 13 requested flows tested
+live, not just written:
+**Stack** — exactly as mandated, no substitutions: React 18 + TS + Vite, React Router v6, TanStack Query,
+Zustand (session/UI/draft state only — never server state), React Hook Form + Zod, Tailwind, Radix UI,
+date-fns/date-fns-tz. Typed API models generated from the backend's live OpenAPI schema (npm run
+gen:api-types), not hand-maintained.
+**All 13 flows verifie
+
+=== PAGE 26 ===
+**What's genuinely not there yet** (Phase 2 / polish, not core-flow gaps): Storybook, a frontend
+Dockerfile/compose service (frontend only runs via npm run dev right now, not containerized), k6 load testing,
+and CI/CD.
+If you want to click through it yourself right now, run:
+cd web && npm run dev
+and open http://localhost:5173 (backend's already running on port 8000). Want me to open it in the
+Browser pane here so you can see it live, or would you rather I just walk through a specific flow?
+USER
+
+=== PAGE 35 ===
+instance, or the whole briscoes-crew-demo project gets torn down — both of which I won't do without you
+telling me to.
+So you're safe to demo from the live URL as many times as you like without needing to reseed.
+USER
+what are teh employers and managers name
+CLAUDE
+Here's the full roster across all three stores (password for everyone: DemoPass123!):
+**Admin** (sees all three stores)
+- admin.demo@briscoes.demo
+**Briscoes Botany Downs** (Auckland)
+- Manager: manager.jordan@briscoes.demo
+- Employee
+
